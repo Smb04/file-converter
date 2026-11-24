@@ -1,0 +1,152 @@
+name: file-converter-dev
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${APP_PORT:-8095}:8080"
+    volumes:
+      - buffer_data:/buffer:ro
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+      - /var/cache/nginx:size=64M,uid=1000,gid=1000,mode=0755
+      - /var/run:size=16M,mode=1777
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - edge_net
+      - internal_net
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/api/Dockerfile
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+      BUFFER_DIR: "/buffer"
+      JOB_TTL_SECONDS: "${JOB_TTL_SECONDS:-1200}"
+      MAX_FILE_BYTES: "${MAX_FILE_BYTES:-524288000}"
+      MAX_BATCH_BYTES: "${MAX_BATCH_BYTES:-1073741824}"
+      BUFFER_HIGH_WATERMARK_PCT: "${BUFFER_HIGH_WATERMARK_PCT:-80}"
+      BUFFER_REJECT_PCT: "${BUFFER_REJECT_PCT:-90}"
+      ENABLE_HW_ACCEL: "${ENABLE_HW_ACCEL:-false}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-*}"
+    volumes:
+      - buffer_data:/buffer:rw
+    tmpfs:
+      - /tmp:size=128M,mode=1777
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - internal_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    user: "999:999"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - internal_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  worker-media:
+    build:
+      context: .
+      dockerfile: backend/worker_media/Dockerfile
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+      BUFFER_DIR: "/buffer"
+      WORKER_CONCURRENCY: "${MEDIA_CONCURRENCY:-2}"
+      IMAGE_TIMEOUT_SEC: "${IMAGE_TIMEOUT_SEC:-30}"
+      VIDEO_TIMEOUT_SEC: "${VIDEO_TIMEOUT_SEC:-900}"
+      ENABLE_HW_ACCEL: "${ENABLE_HW_ACCEL:-false}"
+    volumes:
+      - buffer_data:/buffer:rw
+    tmpfs:
+      - /tmp:size=512M,mode=1777
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - internal_net
+
+  worker-docs:
+    build:
+      context: .
+      dockerfile: backend/worker_docs/Dockerfile
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+      BUFFER_DIR: "/buffer"
+      WORKER_CONCURRENCY: "${DOCS_CONCURRENCY:-2}"
+      DOC_TIMEOUT_SEC: "${DOC_TIMEOUT_SEC:-60}"
+      HOME: "/tmp/lo-home"
+    volumes:
+      - buffer_data:/buffer:rw
+    tmpfs:
+      - /tmp:size=512M,mode=1777
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - internal_net
+
+volumes:
+  buffer_data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=${BUFFER_TMPFS_SIZE:-2G},uid=1000,gid=1000,mode=0750"
+
+networks:
+  edge_net:
+    driver: bridge
+  internal_net:
+    driver: bridge
+    internal: true

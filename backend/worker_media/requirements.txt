@@ -1,0 +1,6 @@
+redis==5.2.1
+pydantic==2.10.6
+pyvips==2.2.3
+Pillow==11.1.0
+img2pdf==0.5.1
+python-magic==0.4.27

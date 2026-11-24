@@ -1,0 +1,102 @@
+/* Apple HIG + DIN EN ISO 9241-171 / WCAG 2.2 AA Design Tokens */
+
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+
+  /* Light Mode (Apple System Colors) */
+  --bg-canvas: #F5F5F7;
+  --bg-elevated: #FFFFFF;
+  --bg-secondary: #F2F2F7;
+  --surface-glass: rgba(255, 255, 255, 0.80);
+  --border-hairline: rgba(60, 60, 67, 0.14);
+  --text-primary: #1D1D1F;
+  --text-secondary: #515154;
+  --text-muted: #6E6E73;
+
+  --accent: #007AFF;
+  --accent-hover: #0062CC;
+  --accent-soft: rgba(0, 122, 255, 0.12);
+  --status-success: #248A3D;
+  --status-success-bg: rgba(52, 199, 89, 0.14);
+  --status-warning: #B25000;
+  --status-warning-bg: rgba(255, 149, 0, 0.15);
+  --status-destructive: #D70015;
+  --status-destructive-bg: rgba(255, 59, 48, 0.13);
+
+  /* Concentric Radii & 8pt Grid */
+  --radius-card: 20px;
+  --radius-row: 12px;
+  --radius-pill: 8px;
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-popover: 0 16px 48px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --touch-min: 44px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-canvas: #000000;
+    --bg-elevated: #1C1C1E;
+    --bg-secondary: #2C2C2E;
+    --surface-glass: rgba(28, 28, 30, 0.82);
+    --border-hairline: rgba(235, 235, 245, 0.16);
+    --text-primary: #F5F5F7;
+    --text-secondary: #C7C7CC;
+    --text-muted: #98989D;
+
+    --accent: #0A84FF;
+    --accent-hover: #409CFF;
+    --accent-soft: rgba(10, 132, 255, 0.18);
+    --status-success: #30D158;
+    --status-success-bg: rgba(48, 209, 88, 0.16);
+    --status-warning: #FF9F0A;
+    --status-warning-bg: rgba(255, 159, 10, 0.18);
+    --status-destructive: #FF453A;
+    --status-destructive-bg: rgba(255, 69, 58, 0.18);
+
+    --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.35);
+    --shadow-popover: 0 20px 56px rgba(0, 0, 0, 0.55);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg-canvas: #000000;
+  --bg-elevated: #1C1C1E;
+  --bg-secondary: #2C2C2E;
+  --surface-glass: rgba(28, 28, 30, 0.82);
+  --border-hairline: rgba(235, 235, 245, 0.16);
+  --text-primary: #F5F5F7;
+  --text-secondary: #C7C7CC;
+  --text-muted: #98989D;
+
+  --accent: #0A84FF;
+  --accent-hover: #409CFF;
+  --accent-soft: rgba(10, 132, 255, 0.18);
+  --status-success: #30D158;
+  --status-success-bg: rgba(48, 209, 88, 0.16);
+  --status-warning: #FF9F0A;
+  --status-warning-bg: rgba(255, 159, 10, 0.18);
+  --status-destructive: #FF453A;
+  --status-destructive-bg: rgba(255, 69, 58, 0.18);
+
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --shadow-popover: 0 20px 56px rgba(0, 0, 0, 0.55);
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --border-hairline: rgba(60, 60, 67, 0.45);
+  }
+  :root[data-theme="dark"] {
+    --border-hairline: rgba(235, 235, 245, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

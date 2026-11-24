@@ -1,0 +1,220 @@
+name: file-converter
+
+services:
+  gateway:
+    image: ${REGISTRY_PREFIX:-ghcr.io/smb04/file-converter}-gateway:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    ports:
+      - "${APP_PORT:-8095}:8080"
+    volumes:
+      - buffer_data:/buffer:ro
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+      - /var/cache/nginx:size=64M,uid=1000,gid=1000,mode=0755
+      - /var/run:size=16M,mode=1777
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - edge_net
+      - internal_net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  api:
+    image: ${REGISTRY_PREFIX:-ghcr.io/smb04/file-converter}-api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+      BUFFER_DIR: "/buffer"
+      JOB_TTL_SECONDS: "${JOB_TTL_SECONDS:-1200}"
+      MAX_FILE_BYTES: "${MAX_FILE_BYTES:-524288000}"
+      MAX_BATCH_BYTES: "${MAX_BATCH_BYTES:-1073741824}"
+      BUFFER_HIGH_WATERMARK_PCT: "${BUFFER_HIGH_WATERMARK_PCT:-80}"
+      BUFFER_REJECT_PCT: "${BUFFER_REJECT_PCT:-90}"
+      ENABLE_HW_ACCEL: "${ENABLE_HW_ACCEL:-false}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-*}"
+    volumes:
+      - buffer_data:/buffer:rw
+    tmpfs:
+      - /tmp:size=128M,mode=1777
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - internal_net
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    user: "999:999"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    networks:
+      - internal_net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 320M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+
+  worker-media:
+    image: ${REGISTRY_PREFIX:-ghcr.io/smb04/file-converter}-worker-media:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+      BUFFER_DIR: "/buffer"
+      WORKER_CONCURRENCY: "${MEDIA_CONCURRENCY:-2}"
+      IMAGE_TIMEOUT_SEC: "${IMAGE_TIMEOUT_SEC:-30}"
+      VIDEO_TIMEOUT_SEC: "${VIDEO_TIMEOUT_SEC:-900}"
+      ENABLE_HW_ACCEL: "${ENABLE_HW_ACCEL:-false}"
+    volumes:
+      - buffer_data:/buffer:rw
+    tmpfs:
+      - /tmp:size=512M,mode=1777
+    # Optional fuer Intel QuickSync / VAAPI auf ZimaBoard / ZimaCube (bei Bedarf einkommentieren):
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # group_add:
+    #   - "${RENDER_GID:-109}"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - internal_net
+    deploy:
+      resources:
+        limits:
+          cpus: "${MEDIA_CPU_LIMIT:-3.0}"
+          memory: "${MEDIA_MEM_LIMIT:-2048M}"
+
+  worker-docs:
+    image: ${REGISTRY_PREFIX:-ghcr.io/smb04/file-converter}-worker-docs:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+      BUFFER_DIR: "/buffer"
+      WORKER_CONCURRENCY: "${DOCS_CONCURRENCY:-2}"
+      DOC_TIMEOUT_SEC: "${DOC_TIMEOUT_SEC:-60}"
+      HOME: "/tmp/lo-home"
+    volumes:
+      - buffer_data:/buffer:rw
+    tmpfs:
+      - /tmp:size=512M,mode=1777
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - internal_net
+    deploy:
+      resources:
+        limits:
+          cpus: "${DOCS_CPU_LIMIT:-2.0}"
+          memory: "${DOCS_MEM_LIMIT:-1536M}"
+
+  # Optional fuer EPUB/MOBI/AZW3 ueber Compose-Profil "ebooks" aktivierbar:
+  worker-ebooks:
+    image: ${REGISTRY_PREFIX:-ghcr.io/smb04/file-converter}-worker-docs:${IMAGE_TAG:-latest}
+    profiles: ["ebooks"]
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    environment:
+      REDIS_URL: "redis://redis:6379/0"
+      BUFFER_DIR: "/buffer"
+      DOC_TIMEOUT_SEC: "${DOC_TIMEOUT_SEC:-60}"
+      HOME: "/tmp/lo-home"
+    volumes:
+      - buffer_data:/buffer:rw
+    tmpfs:
+      - /tmp:size=256M,mode=1777
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - internal_net
+
+volumes:
+  # Variante A (Standardempfehlung): RAM-basiertes tmpfs fuer Zero-Persistence & SSD-Schonung
+  buffer_data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=${BUFFER_TMPFS_SIZE:-2G},uid=1000,gid=1000,mode=0750"
+
+  # Variante B (Alternative fuer grosse Video-Batches auf ZimaOS):
+  # buffer_data:
+  #   driver: local
+  #   driver_opts:
+  #     type: none
+  #     o: bind
+  #     device: /DATA/AppData/converter-scratch
+
+networks:
+  edge_net:
+    driver: bridge
+  internal_net:
+    driver: bridge
+    internal: true
