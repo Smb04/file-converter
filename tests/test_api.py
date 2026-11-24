@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from backend.api.auth_store import AuthStore
 from backend.api.main import create_app, run_gc_cycle
 from backend.shared.buffer_manager import BufferManager
 from backend.shared.config import Settings
@@ -10,9 +11,11 @@ from tests.fake_redis import FakeRedis
 
 
 def _make_test_env(tmp_path: Path, reject_pct: float = 90.0):
+    auth_dir = tmp_path / "auth"
+    buf_dir = tmp_path / "buffer"
     settings = Settings(
         redis_url="redis://localhost:6379/0",
-        buffer_dir=tmp_path,
+        buffer_dir=buf_dir,
         job_ttl_seconds=1200,
         max_file_bytes=5_000_000,
         max_batch_bytes=10_000_000,
@@ -25,19 +28,38 @@ def _make_test_env(tmp_path: Path, reject_pct: float = 90.0):
         allowed_origins=["*"],
         gc_interval_sec=60,
         chunk_size_default=1024,
+        auth_data_dir=auth_dir,
     )
     fake_redis = FakeRedis()
     buf = BufferManager(settings)
-    app = create_app(redis_client=fake_redis, buffer_manager=buf)
+    auth_store = AuthStore(auth_dir)
+    app = create_app(redis_client=fake_redis, buffer_manager=buf, auth_store=auth_store)
     return app, fake_redis, buf, settings
+
+
+def _authenticate_local(client: TestClient) -> None:
+    res = client.post(
+        "/api/v1/auth/register",
+        headers={"Host": "192.168.178.10:8095", "X-Gateway-Client-IP": "192.168.178.50"},
+        json={"username": "admin", "password": "SuperSecurePassword123!"},
+    )
+    assert res.status_code == 201
 
 
 def test_health_and_capabilities(tmp_path: Path):
     app, _, _, _ = _make_test_env(tmp_path)
     with TestClient(app) as client:
+        # Unauthenticated health only leaks minimal status; capabilities require auth
+        res_h_anon = client.get("/api/v1/health")
+        assert res_h_anon.status_code == 200
+        assert res_h_anon.json() == {"status": "ok"}
+        assert client.get("/api/v1/capabilities").status_code == 401
+
+        _authenticate_local(client)
+
         res_h = client.get("/api/v1/health")
         assert res_h.status_code == 200
-        assert res_h.json()["status"] == "ok"
+        assert res_h.json()["redis"] is True
 
         res_c = client.get("/api/v1/capabilities")
         assert res_c.status_code == 200
@@ -50,6 +72,8 @@ def test_chunked_upload_convert_and_purge(tmp_path: Path):
     chunk_size = 1024
 
     with TestClient(app) as client:
+        _authenticate_local(client)
+
         b_res = client.post("/api/v1/batches")
         assert b_res.status_code == 201
         batch = b_res.json()
@@ -60,7 +84,7 @@ def test_chunked_upload_convert_and_purge(tmp_path: Path):
             headers=headers,
             json={
                 "batch_id": batch["batch_id"],
-                "filename": "photo.jpg",  # Intentionally misleading extension
+                "filename": "photo.jpg",
                 "size": len(sample_png),
                 "declared_mime": "image/jpeg",
                 "chunk_size": chunk_size,
@@ -91,7 +115,6 @@ def test_chunked_upload_convert_and_purge(tmp_path: Path):
         assert conv_res.status_code == 200
         job_id = conv_res.json()["jobs"][0]["job_id"]
 
-        # Simulate worker output for ZIP download check
         out_file = buf.job_output_dir(batch["batch_id"], job_id) / "step_0.webp"
         out_file.write_bytes(b"RIFF\x00\x00\x00\x00WEBP")
         job_rec = json.loads(fake_redis.get(f"job:{job_id}") or "{}")
@@ -110,9 +133,9 @@ def test_chunked_upload_convert_and_purge(tmp_path: Path):
 
 
 def test_high_watermark_rejects_with_507(tmp_path: Path):
-    # reject_pct=0.0 guarantees reject threshold is exceeded
     app, _, _, _ = _make_test_env(tmp_path, reject_pct=0.0)
     with TestClient(app) as client:
+        _authenticate_local(client)
         res = client.post("/api/v1/batches")
         assert res.status_code == 507
 

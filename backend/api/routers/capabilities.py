@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
+from backend.api.auth_guard import optional_authenticated_user, require_authenticated_user
 from backend.api.deps import get_buffer, get_redis
 from backend.shared.config import get_settings
 from backend.shared.conversion_graph import export_capabilities
@@ -21,9 +22,13 @@ def health(request: Request) -> dict[str, object]:
     except Exception:
         redis_ok = False
 
+    status_str = "ok" if redis_ok else "degraded"
+    if not optional_authenticated_user(request):
+        return {"status": status_str}
+
     usage_pct = buf.get_buffer_usage_pct()
     return {
-        "status": "ok" if redis_ok else "degraded",
+        "status": status_str,
         "redis": redis_ok,
         "buffer_usage_pct": usage_pct,
         "workers": {
@@ -33,7 +38,7 @@ def health(request: Request) -> dict[str, object]:
     }
 
 
-@router.get("/capabilities")
+@router.get("/capabilities", dependencies=[Depends(require_authenticated_user)])
 def capabilities() -> dict[str, object]:
     settings = get_settings()
     return export_capabilities(

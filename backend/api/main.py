@@ -12,7 +12,8 @@ import redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.routers import batches, capabilities, jobs, uploads
+from backend.api.auth_store import AuthStore
+from backend.api.routers import auth, batches, capabilities, jobs, uploads
 from backend.shared.buffer_manager import BufferManager
 from backend.shared.config import Settings, get_settings
 
@@ -69,13 +70,19 @@ def run_gc_cycle(r: Any, buf: BufferManager, settings: Settings) -> dict[str, in
     return {"orphaned_uploads": orphaned, "expired_batches": expired_batches, "evicted_lru": evicted_lru}
 
 
-def create_app(redis_client: Any = None, buffer_manager: BufferManager | None = None) -> FastAPI:
+def create_app(
+    redis_client: Any = None,
+    buffer_manager: BufferManager | None = None,
+    auth_store: AuthStore | None = None,
+) -> FastAPI:
     settings = get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.buffer = buffer_manager or BufferManager(settings)
         app.state.buffer.ensure_dirs()
+        app.state.auth_store = auth_store or AuthStore(settings.auth_data_dir)
+        app.state.auth_store.ensure_initialized()
         app.state.redis = redis_client or redis.Redis.from_url(settings.redis_url, decode_responses=True)
         gc_task = asyncio.create_task(_gc_loop(app, settings))
         try:
@@ -103,6 +110,7 @@ def create_app(redis_client: Any = None, buffer_manager: BufferManager | None = 
         allow_headers=["*"],
     )
 
+    app.include_router(auth.router)
     app.include_router(capabilities.router)
     app.include_router(batches.router)
     app.include_router(uploads.router)

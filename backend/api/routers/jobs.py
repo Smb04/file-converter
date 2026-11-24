@@ -9,11 +9,16 @@ from urllib.parse import quote
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
 
+from backend.api.auth_guard import require_authenticated_user
 from backend.api.deps import get_buffer, get_redis, require_batch_access
 from backend.shared.buffer_manager import sanitize_filename
 from backend.shared.worker_base import publish_batch_event
 
-router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
+router = APIRouter(
+    prefix="/api/v1/jobs",
+    tags=["jobs"],
+    dependencies=[Depends(require_authenticated_user)],
+)
 
 
 @router.post("/{job_id}/cancel")

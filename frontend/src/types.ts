@@ -104,3 +104,16 @@ export interface BatchSession {
   expires_at: number;
   ttl_seconds: number;
 }
+
+export interface AuthStatus {
+  authenticated: boolean;
+  username: string | null;
+  has_users: boolean;
+  can_register_local: boolean;
+}
+
+export interface ManagedUser {
+  username: string;
+  created_at: number | null;
+  updated_at: number | null;
+}

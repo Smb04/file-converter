@@ -1,13 +1,17 @@
-import { FileStack, Plus, Sun, Moon, Monitor, HelpCircle } from "lucide-react";
+import { FileStack, Plus, Sun, Moon, Monitor, HelpCircle, Users, LogOut } from "lucide-react";
 import type { ThemePreference } from "../types";
 
 interface HeaderProps {
   fileCount: number;
   totalBytes: number;
   theme: ThemePreference;
+  username: string | null;
+  canManageUsersLocal: boolean;
   onCycleTheme: () => void;
   onAddFiles: () => void;
   onOpenCapabilities: () => void;
+  onOpenUsersModal: () => void;
+  onLogout: () => void;
 }
 
 export function formatBytes(bytes: number): string {
@@ -26,9 +30,13 @@ export function Header({
   fileCount,
   totalBytes,
   theme,
+  username,
+  canManageUsersLocal,
   onCycleTheme,
   onAddFiles,
   onOpenCapabilities,
+  onOpenUsersModal,
+  onLogout,
 }: HeaderProps) {
   const themeLabel =
     theme === "auto" ? "Design: System" : theme === "dark" ? "Design: Dunkel" : "Design: Hell";
@@ -44,7 +52,7 @@ export function Header({
           <p className="brand-sub tabular">
             {fileCount > 0
               ? `${fileCount} ${fileCount === 1 ? "Datei" : "Dateien"} • ${formatBytes(totalBytes)}`
-              : "Ephemerer Universal-Konverter • Zero-Persistence"}
+              : `Angemeldet als ${username || "Benutzer"} • Zero-Persistence`}
           </p>
         </div>
       </div>
@@ -67,6 +75,18 @@ export function Header({
           <span>Formate</span>
         </button>
 
+        {canManageUsersLocal && (
+          <button
+            type="button"
+            className="btn"
+            onClick={onOpenUsersModal}
+            aria-label="Lokale Benutzerverwaltung oeffnen"
+          >
+            <Users size={18} aria-hidden="true" />
+            <span>Benutzer</span>
+          </button>
+        )}
+
         <button
           type="button"
           className="btn"
@@ -82,6 +102,17 @@ export function Header({
             <Sun size={18} aria-hidden="true" />
           )}
           <span>{theme === "auto" ? "Auto" : theme === "dark" ? "Dunkel" : "Hell"}</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn"
+          onClick={onLogout}
+          aria-label="Abmelden"
+          title="Abmelden"
+        >
+          <LogOut size={18} aria-hidden="true" />
+          <span>Abmelden</span>
         </button>
       </div>
     </header>

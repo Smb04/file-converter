@@ -12,7 +12,7 @@ Ein selbstgehosteter, datensparsamer Universal-Dateikonverter ohne Benutzerkonte
   - **Strukturierte Daten:** JSON, YAML, XML, CSV, XLSX
 - **Drag & Drop + Multi-File-Batch:** Vollflächige Drag-Dropzone, Zwischenablage (`Strg/Cmd+V`), Chunked Uploads (5-MB-Chaps kompatibel mit Cloudflare Tunnel & Proxies), Echtzeit-SSE-Fortschritt und Streaming-ZIP-Download (`zipstream-ng`).
 - **Ephemer by Design:** Verarbeitung im RAM (`tmpfs`), konfigurierbare TTL (Standard: 20 Min.), High-Watermark-Schutz (80 % / 90 %), optionales Auto-Delete nach Download und Sofort-Lösch-Button.
-- **Security First:** Worker laufen ohne Internetzugang (`internal: true`), Non-Root (`1000:1000`), Read-Only-Root-Filesystem, gehärtete ImageMagick `policy.xml` und Magic-Byte-Validierung.
+- **Security First & Geschützter Zugang:** Authentifizierung mit `scrypt`-Passwort-Hashing, signierten `HttpOnly`-Cookies (kompatibel mit **Vaultwarden** / Passwortmanagern) und strikter **LAN-Only-Benutzerverwaltung** (Registrierung und Passwortänderung nur über die direkte lokale LAN-IP, über DuckDNS ausschließlich Anmeldung). Worker laufen ohne Internetzugang (`internal: true`), Non-Root (`1000:1000`), Read-Only-Root-Filesystem, gehärtete ImageMagick `policy.xml` und Magic-Byte-Validierung.
 
 ## Dokumentation
 

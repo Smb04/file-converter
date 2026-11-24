@@ -133,6 +133,11 @@ server {
     # Chunks sind <= 10 MB; 25M bietet sauberen Puffer
     client_max_body_size 25M;
 
+    # Registrierung & Kontoverwaltung ueber DuckDNS bereits am VPS-Edge blockieren
+    location ~ ^/api/v1/auth/(register|users|password) {
+        return 403;
+    }
+
     # SSE-Live-Fortschritt: Pufferung zwingend deaktivieren
     location ~ ^/api/v1/batches/[^/]+/events$ {
         proxy_pass http://ZIMAOS_TARGET;
@@ -142,6 +147,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-External-Proxy "1";
         proxy_buffering off;
         proxy_cache off;
         chunked_transfer_encoding off;
@@ -156,6 +162,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-External-Proxy "1";
         proxy_request_buffering off;
         proxy_buffering off;
         proxy_read_timeout 600s;
@@ -179,8 +186,12 @@ DEINE_SUBDOMAIN.duckdns.org {
         max_size 25MB
     }
 
+    @blocked_admin path /api/v1/auth/register* /api/v1/auth/users* /api/v1/auth/password*
+    respond @blocked_admin 403
+
     reverse_proxy ZIMAOS_TARGET {
         flush_interval -1
+        header_up X-External-Proxy "1"
         transport http {
             read_timeout 3600s
             write_timeout 600s
@@ -203,12 +214,28 @@ Danach `sudo systemctl reload caddy`.
    proxy_buffering off;
    proxy_request_buffering off;
    proxy_read_timeout 3600s;
+   proxy_set_header X-External-Proxy "1";
+
+   location ~ ^/api/v1/auth/(register|users|password) {
+       return 403;
+   }
    ```
 
-### Schritt 2.5 Optionaler Zugriffsschutz (Private Nutzung)
-Wenn der Konverter nur für dich erreichbar sein soll:
-- **Nginx Basic Auth:** `htpasswd -c /etc/nginx/.converter_htpasswd admin` anlegen und `auth_basic "Restricted"; auth_basic_user_file /etc/nginx/.converter_htpasswd;` im `server`-Block ergänzen.
-- **NPM Access Lists:** In Nginx Proxy Manager unter *Access Lists* Benutzer anlegen und dem Proxy Host zuweisen.
+### Schritt 2.5 Authentifizierung & Vaultwarden-Ersteinrichtung
+Der Konverter ist vollständig durch eine Anmeldung geschützt:
+
+1. **Ersteinrichtung nur im lokalen LAN:**
+   Öffne direkt nach dem ersten Stack-Start **nicht** die DuckDNS-Domain, sondern die lokale ZimaOS-IP:
+   ```text
+   http://<DEINE-ZIMAOS-LAN-IP>:8095
+   ```
+   Dort erscheint automatisch das Formular **„Erstes Konto im lokalen LAN anlegen“**.
+2. **In Vaultwarden speichern:**
+   Lege Benutzername und Passwort (mind. 10 Zeichen) an. Dein Browser / deine Vaultwarden-Extension erkennt das Standard-`<form>` automatisch (`username` + `new-password`) und bietet das Speichern an. Ergänze in Vaultwarden als zweite URI deine DuckDNS-URL (`https://DEINE_SUBDOMAIN.duckdns.org`), damit Vaultwarden auf beiden Adressen automatisch ausfüllt.
+3. **Nutzung über DuckDNS:**
+   Auf `https://DEINE_SUBDOMAIN.duckdns.org` ist ausschließlich die **Anmeldung** (optional *30 Tage angemeldet bleiben* über ein signiertes `HttpOnly`-Cookie) möglich. Registrierung, Passwortänderung und Kontoverwaltung werden auf 4 Ebenen blockiert (VPS-Edge, Proxy-Marker-Prüfung, Host-Header-Prüfung und `LOCAL_ADMIN_CIDRS`).
+4. **Optionaler Tipp für WireGuard/Tailscale:**
+   Falls dein Heim-Subnetz z. B. `192.168.178.0/24` ist, kannst du in Portainer optional `LOCAL_ADMIN_CIDRS=192.168.178.0/24,127.0.0.0/8` setzen — dann werden Admin-Aktionen selbst im LAN ausschließlich aus deinem konkreten Heimnetz-Subnetz akzeptiert.
 
 ---
 

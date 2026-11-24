@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from zipstream import ZipStream
 
+from backend.api.auth_guard import require_authenticated_user
 from backend.api.deps import get_buffer, get_redis, require_batch_access
 from backend.shared.buffer_manager import generate_batch_token, sanitize_filename
 from backend.shared.config import get_settings
@@ -26,7 +27,11 @@ from backend.shared.models import (
     JobSummary,
 )
 
-router = APIRouter(prefix="/api/v1/batches", tags=["batches"])
+router = APIRouter(
+    prefix="/api/v1/batches",
+    tags=["batches"],
+    dependencies=[Depends(require_authenticated_user)],
+)
 
 
 @router.post("", response_model=BatchCreateResponse, status_code=status.HTTP_201_CREATED)

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from backend.api.auth_guard import require_authenticated_user
 from backend.api.deps import get_buffer, get_redis, require_batch_access
 from backend.shared.buffer_manager import sanitize_filename
 from backend.shared.config import get_settings
@@ -16,7 +17,11 @@ from backend.shared.formats import FORMAT_SPECS
 from backend.shared.magic_detect import detect_format
 from backend.shared.models import UploadCompleteResponse, UploadInitRequest, UploadInitResponse
 
-router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
+router = APIRouter(
+    prefix="/api/v1/uploads",
+    tags=["uploads"],
+    dependencies=[Depends(require_authenticated_user)],
+)
 
 
 @router.post("/init", response_model=UploadInitResponse)

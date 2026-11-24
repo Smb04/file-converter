@@ -41,6 +41,8 @@ services:
     environment:
       REDIS_URL: "redis://redis:6379/0"
       BUFFER_DIR: "/buffer"
+      AUTH_DATA_DIR: "/auth-data"
+      LOCAL_ADMIN_CIDRS: "${LOCAL_ADMIN_CIDRS:-127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128,fc00::/7,fe80::/10}"
       JOB_TTL_SECONDS: "${JOB_TTL_SECONDS:-1200}"
       MAX_FILE_BYTES: "${MAX_FILE_BYTES:-524288000}"
       MAX_BATCH_BYTES: "${MAX_BATCH_BYTES:-1073741824}"
@@ -50,6 +52,7 @@ services:
       ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-*}"
     volumes:
       - buffer_data:/buffer:rw
+      - auth_data:/auth-data:rw
     tmpfs:
       - /tmp:size=128M,mode=1777
     depends_on:
@@ -139,6 +142,8 @@ services:
       - internal_net
 
 volumes:
+  auth_data:
+    driver: local
   buffer_data:
     driver: local
     driver_opts:

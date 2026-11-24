@@ -79,6 +79,23 @@ class FakeRedis:
                 removed += 1
         return removed
 
+    def incr(self, key: str) -> int:
+        self._evict_if_expired(key)
+        entry = self._kv.get(key)
+        cur = int(entry[0]) if entry else 0
+        nxt = cur + 1
+        exp = entry[1] if entry else None
+        self._kv[key] = (str(nxt), exp)
+        return nxt
+
+    def expire(self, key: str, seconds: int) -> bool:
+        self._evict_if_expired(key)
+        entry = self._kv.get(key)
+        if not entry:
+            return False
+        self._kv[key] = (entry[0], time.time() + seconds)
+        return True
+
     def lpush(self, queue_name: str, value: str) -> int:
         self._lists[queue_name].appendleft(value)
         return len(self._lists[queue_name])

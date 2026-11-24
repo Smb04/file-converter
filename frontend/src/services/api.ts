@@ -1,8 +1,100 @@
 import type {
+  AuthStatus,
   BatchSession,
   CapabilitiesResponse,
   ConversionOptions,
+  ManagedUser,
 } from "../types";
+
+export class AuthRequiredError extends Error {
+  constructor(message = "Anmeldung erforderlich.") {
+    super(message);
+    this.name = "AuthRequiredError";
+  }
+}
+
+export async function fetchAuthStatus(): Promise<AuthStatus> {
+  const res = await fetch("/api/v1/auth/status", { credentials: "same-origin" });
+  if (!res.ok) throw new Error("Auth-Status konnte nicht geprueft werden.");
+  return res.json();
+}
+
+export async function login(
+  username: string,
+  password: string,
+  rememberMe: boolean
+): Promise<{ authenticated: boolean; username: string }> {
+  const res = await fetch("/api/v1/auth/login", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password, remember_me: rememberMe }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || "Anmeldung fehlgeschlagen.");
+  }
+  return res.json();
+}
+
+export async function logout(): Promise<void> {
+  await fetch("/api/v1/auth/logout", { method: "POST", credentials: "same-origin" });
+}
+
+export async function registerUser(
+  username: string,
+  password: string
+): Promise<{ created: boolean; username: string; auto_logged_in: boolean }> {
+  const res = await fetch("/api/v1/auth/register", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || "Konto konnte nicht angelegt werden.");
+  }
+  return res.json();
+}
+
+export async function fetchUsers(): Promise<ManagedUser[]> {
+  const res = await fetch("/api/v1/auth/users", { credentials: "same-origin" });
+  if (res.status === 401) throw new AuthRequiredError();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || "Benutzerliste konnte nicht geladen werden.");
+  }
+  const data = (await res.json()) as { users: ManagedUser[] };
+  return data.users;
+}
+
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  const res = await fetch("/api/v1/auth/password", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || "Passwort konnte nicht geaendert werden.");
+  }
+}
+
+export async function deleteUser(username: string): Promise<void> {
+  const res = await fetch(`/api/v1/auth/users/${encodeURIComponent(username)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || "Benutzer konnte nicht geloescht werden.");
+  }
+}
 
 export interface UploadCompleteResult {
   file_id: string;
@@ -15,13 +107,15 @@ export interface UploadCompleteResult {
 }
 
 export async function fetchCapabilities(): Promise<CapabilitiesResponse> {
-  const res = await fetch("/api/v1/capabilities");
+  const res = await fetch("/api/v1/capabilities", { credentials: "same-origin" });
+  if (res.status === 401) throw new AuthRequiredError();
   if (!res.ok) throw new Error("Unterstuetzte Formate konnten nicht geladen werden.");
   return res.json();
 }
 
 export async function createBatch(): Promise<BatchSession> {
-  const res = await fetch("/api/v1/batches", { method: "POST" });
+  const res = await fetch("/api/v1/batches", { method: "POST", credentials: "same-origin" });
+  if (res.status === 401) throw new AuthRequiredError();
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || "Batch-Session konnte nicht erstellt werden.");

@@ -17,7 +17,8 @@ COPY backend/__init__.py /app/backend/__init__.py
 COPY backend/shared /app/backend/shared
 COPY backend/api /app/backend/api
 
-RUN groupadd -g 1000 appgroup && useradd -u 1000 -g 1000 -M -s /sbin/nologin appuser
+RUN groupadd -g 1000 appgroup && useradd -u 1000 -g 1000 -M -s /sbin/nologin appuser && \
+    mkdir -p /auth-data && chown 1000:1000 /auth-data
 USER 1000:1000
 
 EXPOSE 8000

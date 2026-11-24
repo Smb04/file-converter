@@ -7,22 +7,28 @@ import { FileRow } from "./components/FileRow";
 import { FooterBar } from "./components/FooterBar";
 import { FormatPopover } from "./components/FormatPopover";
 import { Header } from "./components/Header";
+import { LocalUsersModal } from "./components/LocalUsersModal";
+import { LoginScreen } from "./components/LoginScreen";
 import { OptionsPopover } from "./components/OptionsPopover";
 import { ToastContainer, type ToastMessage } from "./components/Toast";
 import { useLocalPreferences } from "./hooks/useLocalPreferences";
 import {
+  AuthRequiredError,
   beaconDisposeBatch,
   buildBatchZipUrl,
   buildJobDownloadUrl,
   cancelJob,
   createBatch,
+  fetchAuthStatus,
   fetchCapabilities,
+  logout,
   purgeBatch,
   startConversion,
   uploadFileChunked,
 } from "./services/api";
 import {
   DEFAULT_OPTIONS,
+  type AuthStatus,
   type BatchFileItem,
   type BatchSession,
   type CapabilitiesResponse,
@@ -37,6 +43,7 @@ export default function App() {
     setAutoDeleteAfterDownload,
   } = useLocalPreferences();
 
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse | null>(null);
   const [batch, setBatch] = useState<BatchSession | null>(null);
   const [items, setItems] = useState<BatchFileItem[]>([]);
@@ -47,6 +54,7 @@ export default function App() {
   const [formatPickerId, setFormatPickerId] = useState<string | null>(null);
   const [optionsPickerId, setOptionsPickerId] = useState<string | null>(null);
   const [showCapabilities, setShowCapabilities] = useState(false);
+  const [showUsersModal, setShowUsersModal] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [liveAnnouncement, setLiveAnnouncement] = useState("");
 
@@ -63,11 +71,31 @@ export default function App() {
     }, 5500);
   }, []);
 
-  useEffect(() => {
-    fetchCapabilities()
-      .then(setCapabilities)
+  const refreshAuthStatus = useCallback(() => {
+    fetchAuthStatus()
+      .then(setAuthStatus)
       .catch(() => pushToast("Verbindung zum Server konnte nicht hergestellt werden."));
   }, [pushToast]);
+
+  useEffect(() => {
+    refreshAuthStatus();
+  }, [refreshAuthStatus]);
+
+  useEffect(() => {
+    if (!authStatus?.authenticated) {
+      setCapabilities(null);
+      return;
+    }
+    fetchCapabilities()
+      .then(setCapabilities)
+      .catch((err) => {
+        if (err instanceof AuthRequiredError) {
+          refreshAuthStatus();
+        } else {
+          pushToast("Verbindung zum Server konnte nicht hergestellt werden.");
+        }
+      });
+  }, [authStatus?.authenticated, pushToast, refreshAuthStatus]);
 
   // Countdown ticker for ephemeral TTL
   useEffect(() => {
@@ -420,11 +448,45 @@ export default function App() {
     });
   };
 
+  const handleLogout = async () => {
+    if (batch) {
+      await purgeBatch(batch).catch(() => {});
+    }
+    await logout();
+    batchRef.current = null;
+    setBatch(null);
+    setItems([]);
+    setShowUsersModal(false);
+    refreshAuthStatus();
+  };
+
   const formatPickerItem = items.find((i) => i.localId === formatPickerId) ?? null;
   const optionsPickerItem = items.find((i) => i.localId === optionsPickerId) ?? null;
   const totalBytes = items.reduce((acc, it) => acc + it.size, 0);
   const completedCount = items.filter((it) => it.stage === "completed").length;
   const isConvertingAny = items.some((it) => it.stage === "running" || it.stage === "queued");
+
+  if (!authStatus) {
+    return (
+      <div className="auth-shell">
+        <div className="card auth-card">
+          <p className="brand-sub">Pruefe Anmeldung...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authStatus.authenticated) {
+    return (
+      <>
+        <LoginScreen authStatus={authStatus} onSuccess={refreshAuthStatus} />
+        <ToastContainer
+          toasts={toasts}
+          onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))}
+        />
+      </>
+    );
+  }
 
   return (
     <>
@@ -464,9 +526,13 @@ export default function App() {
           fileCount={items.length}
           totalBytes={totalBytes}
           theme={prefs.theme}
+          username={authStatus.username}
+          canManageUsersLocal={authStatus.can_register_local}
           onCycleTheme={handleCycleTheme}
           onAddFiles={() => fileInputRef.current?.click()}
           onOpenCapabilities={() => setShowCapabilities(true)}
+          onOpenUsersModal={() => setShowUsersModal(true)}
+          onLogout={() => void handleLogout()}
         />
 
         <main id="main-content" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -583,6 +649,13 @@ export default function App() {
         isOpen={showCapabilities}
         formats={capabilities?.formats ?? []}
         onClose={() => setShowCapabilities(false)}
+      />
+
+      <LocalUsersModal
+        isOpen={showUsersModal}
+        currentUsername={authStatus.username ?? ""}
+        onClose={() => setShowUsersModal(false)}
+        onNotify={(msg) => pushToast(msg)}
       />
 
       <ToastContainer
