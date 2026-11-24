@@ -99,6 +99,8 @@ services:
       IMAGE_TIMEOUT_SEC: "${IMAGE_TIMEOUT_SEC:-30}"
       VIDEO_TIMEOUT_SEC: "${VIDEO_TIMEOUT_SEC:-900}"
       ENABLE_HW_ACCEL: "${ENABLE_HW_ACCEL:-false}"
+      VAAPI_DEVICE: "${VAAPI_DEVICE:-/dev/dri/renderD128}"
+      LIBVA_DRIVER_NAME: "iHD"
     volumes:
       - buffer_data:/buffer:rw
     tmpfs:

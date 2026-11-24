@@ -40,17 +40,27 @@ Diese Schritt-für-Schritt-Anleitung beschreibt:
    ```
    Erwartete Antwort: `{"status":"ok","redis":true,...}`.
 
-### 1.3 Optional: Intel QuickSync / VAAPI auf ZimaBoard / ZimaCube aktivieren
-Falls dein ZimaOS-System eine Intel-iGPU (z. B. Intel N100) besitzt:
-1. Auf ZimaOS per SSH die Gruppen-ID von `/dev/dri/renderD128` ermitteln:
+### 1.3 Optional: Intel Arc GPU & Intel QuickSync / VAAPI auf ZimaOS aktivieren
+Besitzt dein ZimaOS-Server eine dedizierte **Intel Arc GPU** (unterstützt H.264, H.265, VP9 **und AV1** in Hardware) oder eine Intel-CPU-iGPU:
+1. Auf ZimaOS per SSH prüfen, welches Render-Device zur Intel Arc gehört (wichtig falls zusätzlich eine CPU-iGPU aktiv ist!):
    ```bash
+   ls -la /dev/dri/by-path
    stat -c '%g' /dev/dri/renderD128
    ```
+   *(Liegt die Intel Arc auf `renderD129` statt `renderD128`, setze unten entsprechend `VAAPI_DEVICE=/dev/dri/renderD129` und ermittle auch deren GID.)*
 2. In `docker-compose.yml` beim Service `worker-media` den auskommentierten `devices:`- und `group_add:`-Block einkommentieren.
-3. In Portainer die Environment-Variablen `ENABLE_HW_ACCEL=true` und `RENDER_GID=<ermittelte-GID>` setzen und den Stack neu deployen.
+3. In Portainer folgende Environment-Variablen setzen und den Stack neu deployen:
+   - `ENABLE_HW_ACCEL=true`
+   - `VAAPI_DEVICE=/dev/dri/renderD128` *(oder `renderD129`)*
+   - `RENDER_GID=<ermittelte-GID>` *(z. B. `109`)*
+4. Funktionstest direkt im laufenden Container ausführen:
+   ```bash
+   docker exec -it file-converter-worker-media-1 vainfo --display drm --device /dev/dri/renderD128
+   ```
+   *(Die Ausgabe sollte Profile für `H264`, `HEVC`, `VP9` und bei Intel Arc auch `AV1` auflisten. Schlägt bei einem exotischen Video ein Hardware-Durchlauf fehl, schaltet der Worker automatisch auf CPU-Encoding zurück.)*
 
 ### 1.4 Optional: Große Videos (> 2 GB) statt RAM auf Scratch-Ordner puffern
-Falls regelmäßig mehrstündige Videos konvertiert werden und dein ZimaOS-RAM begrenzt ist, kommentiere in `docker-compose.yml` unter `volumes:` Variante A (`tmpfs`) aus und aktiviere Variante B mit einem dedizierten Scratch-Ordner (z. B. `/DATA/AppData/converter-scratch`).
+Beachte, dass während einer Video-Konvertierung Eingabe- und Ausgabedatei gleichzeitig im Buffer liegen. Bei `BUFFER_TMPFS_SIZE=2G` sind Videodateien bis ca. 800 MB unkritisch. Falls regelmäßig mehrstündige 4K-Videos konvertiert werden und dein ZimaOS-RAM begrenzt ist, kommentiere in `docker-compose.yml` unter `volumes:` Variante A (`tmpfs`) aus und aktiviere Variante B mit einem dedizierten Scratch-Ordner (z. B. `/DATA/AppData/converter-scratch`).
 
 ---
 

@@ -117,11 +117,13 @@ services:
       IMAGE_TIMEOUT_SEC: "${IMAGE_TIMEOUT_SEC:-30}"
       VIDEO_TIMEOUT_SEC: "${VIDEO_TIMEOUT_SEC:-900}"
       ENABLE_HW_ACCEL: "${ENABLE_HW_ACCEL:-false}"
+      VAAPI_DEVICE: "${VAAPI_DEVICE:-/dev/dri/renderD128}"
+      LIBVA_DRIVER_NAME: "iHD"
     volumes:
       - buffer_data:/buffer:rw
     tmpfs:
       - /tmp:size=512M,mode=1777
-    # Optional fuer Intel QuickSync / VAAPI auf ZimaBoard / ZimaCube (bei Bedarf einkommentieren):
+    # Optional fuer Intel Arc / QuickSync VAAPI auf ZimaOS (bei Bedarf einkommentieren):
     # devices:
     #   - /dev/dri:/dev/dri
     # group_add:

@@ -24,6 +24,7 @@ class Settings:
     allowed_origins: list[str]
     gc_interval_sec: int
     chunk_size_default: int
+    vaapi_device: str = "/dev/dri/renderD128"
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -49,6 +50,7 @@ def get_settings() -> Settings:
         doc_timeout_sec=int(os.getenv("DOC_TIMEOUT_SEC", "60")),
         video_timeout_sec=int(os.getenv("VIDEO_TIMEOUT_SEC", "900")),
         enable_hw_accel=_env_bool("ENABLE_HW_ACCEL", False),
+        vaapi_device=os.getenv("VAAPI_DEVICE", "/dev/dri/renderD128"),
         allowed_origins=origins,
         gc_interval_sec=int(os.getenv("GC_INTERVAL_SEC", "60")),
         chunk_size_default=int(os.getenv("CHUNK_SIZE_BYTES", str(5 * 1024 * 1024))),

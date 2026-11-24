@@ -6,15 +6,28 @@ import multiprocessing
 import os
 import subprocess
 import time
+from functools import lru_cache
 from pathlib import Path
 
-import img2pdf
-import pyvips
-from PIL import Image
+try:
+    import img2pdf
+except ImportError:  # pragma: no cover
+    img2pdf = None  # type: ignore
+
+try:
+    import pyvips
+except (ImportError, OSError):  # pragma: no cover
+    pyvips = None  # type: ignore
+
+try:
+    from PIL import Image
+except ImportError:  # pragma: no cover
+    Image = None  # type: ignore
 
 from backend.shared.config import get_settings
 from backend.shared.models import ConversionOptions, JobPayload
 from backend.shared.worker_base import (
+    WorkerCancelledError,
     publish_batch_event,
     run_subprocess_guarded,
     run_worker_loop,
@@ -169,9 +182,99 @@ def _probe_duration_us(src: Path) -> int:
         return 0
 
 
+def _vaapi_device_path() -> Path:
+    return Path(get_settings().vaapi_device)
+
+
 def _hw_vaapi_available(opts: ConversionOptions) -> bool:
     settings = get_settings()
-    return settings.enable_hw_accel and opts.use_hw_accel and Path("/dev/dri/renderD128").exists()
+    return settings.enable_hw_accel and opts.use_hw_accel and _vaapi_device_path().exists()
+
+
+@lru_cache(maxsize=1)
+def _get_supported_vaapi_encoders() -> frozenset[str]:
+    candidates = {"h264_vaapi", "hevc_vaapi", "vp9_vaapi", "av1_vaapi"}
+    try:
+        res = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        found = {enc for enc in candidates if enc in res.stdout}
+        return frozenset(found)
+    except Exception:
+        return frozenset()
+
+
+def _select_vaapi_encoder(
+    dst_fmt: str, video_codec: str, available: frozenset[str]
+) -> str | None:
+    if dst_fmt == "webm":
+        if video_codec == "av1" and "av1_vaapi" in available:
+            return "av1_vaapi"
+        if "vp9_vaapi" in available:
+            return "vp9_vaapi"
+        return None
+    if dst_fmt in {"mp4", "mkv", "mov"}:
+        if video_codec == "av1" and "av1_vaapi" in available:
+            return "av1_vaapi"
+        if video_codec == "h265" and "hevc_vaapi" in available:
+            return "hevc_vaapi"
+        if video_codec in {"auto", "h264"} and "h264_vaapi" in available:
+            return "h264_vaapi"
+    return None
+
+
+def _build_video_cmd(
+    src: Path,
+    dst: Path,
+    dst_fmt: str,
+    opts: ConversionOptions,
+    vaapi_encoder: str | None,
+    vaapi_device: str,
+) -> list[str]:
+    crf_map = {"small": "28", "balanced": "23", "high": "18"}
+    vaapi_q_map = {"small": "30", "balanced": "24", "high": "19"}
+    crf = crf_map.get(opts.video_preset, "23")
+    vaapi_q = vaapi_q_map.get(opts.video_preset, "24")
+
+    cmd = ["ffmpeg", "-y", "-protocol_whitelist", "file,pipe"]
+    if vaapi_encoder:
+        cmd.extend(["-vaapi_device", vaapi_device])
+
+    cmd.extend(["-i", str(src)])
+
+    scale_height = {"1080p": "1080", "720p": "720", "480p": "480"}.get(opts.video_resolution)
+    if vaapi_encoder:
+        vf = "format=nv12,hwupload" + (f",scale_vaapi=-2:{scale_height}" if scale_height else "")
+        cmd.extend(["-vf", vf, "-c:v", vaapi_encoder, "-global_quality", vaapi_q])
+    else:
+        if scale_height:
+            cmd.extend(["-vf", f"scale=-2:{scale_height}"])
+        if dst_fmt == "webm":
+            vcodec = "libaom-av1" if opts.video_codec == "av1" else "libvpx-vp9"
+            cmd.extend(["-c:v", vcodec, "-crf", crf, "-b:v", "0"])
+        elif opts.video_codec == "h265":
+            cmd.extend(["-c:v", "libx265", "-crf", crf, "-preset", "medium"])
+        elif opts.video_codec == "av1":
+            cmd.extend(["-c:v", "libaom-av1", "-crf", crf, "-cpu-used", "6"])
+        else:
+            cmd.extend(["-c:v", "libx264", "-crf", crf, "-preset", "medium", "-pix_fmt", "yuv420p"])
+
+    if opts.mute_audio:
+        cmd.append("-an")
+    elif dst_fmt == "webm":
+        cmd.extend(["-c:a", "libopus", "-b:a", "128k"])
+    else:
+        cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+
+    if dst_fmt == "mp4":
+        cmd.extend(["-movflags", "+faststart"])
+
+    cmd.extend(["-progress", "pipe:1", "-nostats", str(dst)])
+    return cmd
 
 
 def _run_ffmpeg_with_progress(
@@ -245,46 +348,41 @@ def _convert_audio(r, payload: JobPayload, src: Path, dst: Path, dst_fmt: str, o
 
 def _convert_video(r, payload: JobPayload, src: Path, dst: Path, dst_fmt: str, opts: ConversionOptions) -> None:
     duration_us = _probe_duration_us(src)
-    crf_map = {"small": "28", "balanced": "23", "high": "18"}
-    crf = crf_map.get(opts.video_preset, "23")
+    timeout_sec = get_settings().video_timeout_sec
+    vaapi_device = str(_vaapi_device_path())
 
-    cmd = ["ffmpeg", "-y", "-protocol_whitelist", "file,pipe"]
-    use_vaapi = _hw_vaapi_available(opts) and dst_fmt in {"mp4", "mkv", "mov"} and opts.video_codec in {"auto", "h264", "h265"}
-    if use_vaapi:
-        cmd.extend(["-vaapi_device", "/dev/dri/renderD128"])
+    vaapi_encoder: str | None = None
+    if _hw_vaapi_available(opts):
+        vaapi_encoder = _select_vaapi_encoder(dst_fmt, opts.video_codec, _get_supported_vaapi_encoders())
 
-    cmd.extend(["-i", str(src)])
+    if vaapi_encoder:
+        hw_cmd = _build_video_cmd(src, dst, dst_fmt, opts, vaapi_encoder, vaapi_device)
+        try:
+            _run_ffmpeg_with_progress(
+                r, payload, hw_cmd, duration_us, timeout_sec, f"Transkodiere Video (GPU: {vaapi_encoder})"
+            )
+            return
+        except (WorkerCancelledError, TimeoutError):
+            raise
+        except RuntimeError:
+            dst.unlink(missing_ok=True)
+            update_job_record(
+                r, payload.job_id, progress=5, phase="Hardware-Encoding nicht kompatibel – nutze CPU-Fallback"
+            )
+            publish_batch_event(
+                r,
+                payload.batch_id,
+                "job.progress",
+                {
+                    "job_id": payload.job_id,
+                    "status": "running",
+                    "progress": 5,
+                    "phase": "Hardware-Encoding nicht kompatibel – nutze CPU-Fallback",
+                },
+            )
 
-    scale_height = {"1080p": "1080", "720p": "720", "480p": "480"}.get(opts.video_resolution)
-    if use_vaapi:
-        vf = "format=nv12,hwupload" + (f",scale_vaapi=-2:{scale_height}" if scale_height else "")
-        cmd.extend(["-vf", vf])
-        cmd.extend(["-c:v", "hevc_vaapi" if opts.video_codec == "h265" else "h264_vaapi"])
-    else:
-        if scale_height:
-            cmd.extend(["-vf", f"scale=-2:{scale_height}"])
-        if dst_fmt == "webm":
-            vcodec = "libaom-av1" if opts.video_codec == "av1" else "libvpx-vp9"
-            cmd.extend(["-c:v", vcodec, "-crf", crf, "-b:v", "0"])
-        elif opts.video_codec == "h265":
-            cmd.extend(["-c:v", "libx265", "-crf", crf, "-preset", "medium"])
-        elif opts.video_codec == "av1":
-            cmd.extend(["-c:v", "libaom-av1", "-crf", crf, "-cpu-used", "6"])
-        else:
-            cmd.extend(["-c:v", "libx264", "-crf", crf, "-preset", "medium", "-pix_fmt", "yuv420p"])
-
-    if opts.mute_audio:
-        cmd.append("-an")
-    elif dst_fmt == "webm":
-        cmd.extend(["-c:a", "libopus", "-b:a", "128k"])
-    else:
-        cmd.extend(["-c:a", "aac", "-b:a", "192k"])
-
-    if dst_fmt == "mp4":
-        cmd.extend(["-movflags", "+faststart"])
-
-    cmd.extend(["-progress", "pipe:1", "-nostats", str(dst)])
-    _run_ffmpeg_with_progress(r, payload, cmd, duration_us, get_settings().video_timeout_sec, "Transkodiere Video")
+    cpu_cmd = _build_video_cmd(src, dst, dst_fmt, opts, None, vaapi_device)
+    _run_ffmpeg_with_progress(r, payload, cpu_cmd, duration_us, timeout_sec, "Transkodiere Video")
 
 
 def _convert_video_to_gif(r, payload: JobPayload, src: Path, dst: Path, opts: ConversionOptions) -> None:
