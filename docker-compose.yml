@@ -58,7 +58,7 @@ services:
       MAX_BATCH_BYTES: "${MAX_BATCH_BYTES:-1073741824}"
       BUFFER_HIGH_WATERMARK_PCT: "${BUFFER_HIGH_WATERMARK_PCT:-80}"
       BUFFER_REJECT_PCT: "${BUFFER_REJECT_PCT:-90}"
-      ENABLE_HW_ACCEL: "${ENABLE_HW_ACCEL:-false}"
+      ENABLE_HW_ACCEL: "${ENABLE_HW_ACCEL:-true}"
       ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-*}"
     volumes:
       - buffer_data:/buffer:rw
@@ -121,18 +121,19 @@ services:
       WORKER_CONCURRENCY: "${MEDIA_CONCURRENCY:-2}"
       IMAGE_TIMEOUT_SEC: "${IMAGE_TIMEOUT_SEC:-30}"
       VIDEO_TIMEOUT_SEC: "${VIDEO_TIMEOUT_SEC:-900}"
-      ENABLE_HW_ACCEL: "${ENABLE_HW_ACCEL:-false}"
+      ENABLE_HW_ACCEL: "${ENABLE_HW_ACCEL:-true}"
       VAAPI_DEVICE: "${VAAPI_DEVICE:-/dev/dri/renderD128}"
       LIBVA_DRIVER_NAME: "iHD"
     volumes:
       - buffer_data:/buffer:rw
     tmpfs:
       - /tmp:size=512M,mode=1777
-    # Optional fuer Intel Arc / QuickSync VAAPI auf ZimaOS (bei Bedarf einkommentieren):
-    # devices:
-    #   - /dev/dri:/dev/dri
-    # group_add:
-    #   - "${RENDER_GID:-109}"
+    # Intel Arc / QuickSync VAAPI auf ZimaOS (direkt aktiv):
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${RENDER_GID:-109}"
+      - "${VIDEO_GID:-44}"
     depends_on:
       redis:
         condition: service_healthy

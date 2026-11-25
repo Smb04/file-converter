@@ -30,7 +30,7 @@ Diese Schritt-für-Schritt-Anleitung beschreibt:
 | `MAX_BATCH_BYTES` | `1073741824` | Max. 1 GB pro Batch |
 | `MEDIA_CONCURRENCY` | `2` | Optimal für Intel N100 / 4-Core |
 | `DOCS_CONCURRENCY` | `2` | Parallele LibreOffice-Jobs |
-| `ENABLE_HW_ACCEL` | `false` (oder `true` mit iGPU) | Siehe Abschnitt 1.3 |
+| `ENABLE_HW_ACCEL` | `true` (Standard) | Intel Arc / VAAPI aktiv (`false` zum Deaktivieren) |
 
 5. Klicke auf **Deploy the stack**.
 6. Prüfe nach ca. 20 Sekunden in Portainer unter **Containers**, ob `gateway`, `api`, `redis`, `worker-media` und `worker-docs` auf `healthy` / `running` stehen.
@@ -38,22 +38,17 @@ Diese Schritt-für-Schritt-Anleitung beschreibt:
    ```bash
    curl http://127.0.0.1:8095/api/v1/health
    ```
-   Erwartete Antwort: `{"status":"ok","redis":true,...}`.
+   Erwartete Antwort: `{"status":"ok"}`.
 
-### 1.3 Optional: Intel Arc GPU & Intel QuickSync / VAAPI auf ZimaOS aktivieren
-Besitzt dein ZimaOS-Server eine dedizierte **Intel Arc GPU** (unterstützt H.264, H.265, VP9 **und AV1** in Hardware) oder eine Intel-CPU-iGPU:
-1. Auf ZimaOS per SSH prüfen, welches Render-Device zur Intel Arc gehört (wichtig falls zusätzlich eine CPU-iGPU aktiv ist!):
+### 1.3 Intel Arc GPU & Intel QuickSync / VAAPI auf ZimaOS prüfen
+`/dev/dri:/dev/dri` und `ENABLE_HW_ACCEL=true` sind in `docker-compose.yml` bereits standardmäßig aktiviert (unterstützt H.264, H.265, VP9 **und AV1** in Hardware):
+1. Auf ZimaOS per SSH prüfen, welches Render-Device zur Intel Arc gehört (wichtig falls zusätzlich eine CPU-iGPU aktiv ist!) und welche Gruppen-IDs genutzt werden:
    ```bash
    ls -la /dev/dri/by-path
    stat -c '%g' /dev/dri/renderD128
    ```
-   *(Liegt die Intel Arc auf `renderD129` statt `renderD128`, setze unten entsprechend `VAAPI_DEVICE=/dev/dri/renderD129` und ermittle auch deren GID.)*
-2. In `docker-compose.yml` beim Service `worker-media` den auskommentierten `devices:`- und `group_add:`-Block einkommentieren.
-3. In Portainer folgende Environment-Variablen setzen und den Stack neu deployen:
-   - `ENABLE_HW_ACCEL=true`
-   - `VAAPI_DEVICE=/dev/dri/renderD128` *(oder `renderD129`)*
-   - `RENDER_GID=<ermittelte-GID>` *(z. B. `109`)*
-4. Funktionstest direkt im laufenden Container ausführen:
+   *(Liegt die Intel Arc auf `renderD129` statt `renderD128` oder weicht die Gruppen-ID von `109` ab, setze in Portainer einfach `VAAPI_DEVICE=/dev/dri/renderD129` bzw. `RENDER_GID=<ermittelte-GID>` und `VIDEO_GID=<video-GID>` als Environment-Variablen.)*
+2. Funktionstest direkt im laufenden Container ausführen:
    ```bash
    docker exec -it file-converter-worker-media-1 vainfo --display drm --device /dev/dri/renderD128
    ```
