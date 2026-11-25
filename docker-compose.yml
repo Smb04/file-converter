@@ -10,7 +10,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    pids_limit: 128
     ports:
       - "${APP_PORT:-8095}:8080"
     volumes:
@@ -30,6 +29,7 @@ services:
         limits:
           cpus: "1.0"
           memory: 256M
+          pids: 128
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 30s
@@ -45,7 +45,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    pids_limit: 256
     environment:
       REDIS_URL: "redis://redis:6379/0"
       BUFFER_DIR: "/buffer"
@@ -75,6 +74,7 @@ services:
         limits:
           cpus: "1.5"
           memory: 512M
+          pids: 256
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
       interval: 30s
@@ -91,7 +91,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    pids_limit: 64
     networks:
       - internal_net
     deploy:
@@ -99,6 +98,7 @@ services:
         limits:
           cpus: "0.5"
           memory: 320M
+          pids: 64
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 15s
@@ -114,7 +114,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    pids_limit: 256
     environment:
       REDIS_URL: "redis://redis:6379/0"
       BUFFER_DIR: "/buffer"
@@ -144,6 +143,7 @@ services:
         limits:
           cpus: "${MEDIA_CPU_LIMIT:-3.0}"
           memory: "${MEDIA_MEM_LIMIT:-2048M}"
+          pids: 256
 
   worker-docs:
     image: ${REGISTRY_PREFIX:-ghcr.io/smb04/file-converter}-worker-docs:${IMAGE_TAG:-latest}
@@ -154,7 +154,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    pids_limit: 256
     environment:
       REDIS_URL: "redis://redis:6379/0"
       BUFFER_DIR: "/buffer"
@@ -175,6 +174,7 @@ services:
         limits:
           cpus: "${DOCS_CPU_LIMIT:-2.0}"
           memory: "${DOCS_MEM_LIMIT:-1536M}"
+          pids: 256
 
   # Optional fuer EPUB/MOBI/AZW3 ueber Compose-Profil "ebooks" aktivierbar:
   worker-ebooks:
@@ -187,7 +187,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    pids_limit: 128
     environment:
       REDIS_URL: "redis://redis:6379/0"
       BUFFER_DIR: "/buffer"
@@ -202,6 +201,10 @@ services:
         condition: service_healthy
     networks:
       - internal_net
+    deploy:
+      resources:
+        limits:
+          pids: 128
 
 volumes:
   # Kleiner persistenter Auth-Speicher (nur in api gemountet, getrennt vom ephemeren /buffer)
